@@ -1,0 +1,10 @@
+rumps
+sounddevice
+numpy
+pydub
+openai
+notion-client
+python-dotenv
+rich
+flask
+requests

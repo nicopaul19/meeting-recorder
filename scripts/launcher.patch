@@ -1,0 +1,11 @@
+--- "Meeting Recorder.app/Contents/MacOS/launcher"
++++ "Meeting Recorder.app/Contents/MacOS/launcher"
+@@ -4,6 +4,6 @@
+ cd "/Users/nicolasemidat/Library/CloudStorage/GoogleDrive-nicopaul19@gmail.com/My Drive/AI Projects & Agents/meeting-recorder"
+ if [ -f "/Users/nicolasemidat/Library/CloudStorage/GoogleDrive-nicopaul19@gmail.com/My Drive/AI Projects & Agents/meeting-recorder/venv/bin/python3" ]; then
+-    exec "/Users/nicolasemidat/Library/CloudStorage/GoogleDrive-nicopaul19@gmail.com/My Drive/AI Projects & Agents/meeting-recorder/venv/bin/python3" "/Users/nicolasemidat/Library/CloudStorage/GoogleDrive-nicopaul19@gmail.com/My Drive/AI Projects & Agents/meeting-recorder/app.py"
++    "/Users/nicolasemidat/Library/CloudStorage/GoogleDrive-nicopaul19@gmail.com/My Drive/AI Projects & Agents/meeting-recorder/venv/bin/python3" "/Users/nicolasemidat/Library/CloudStorage/GoogleDrive-nicopaul19@gmail.com/My Drive/AI Projects & Agents/meeting-recorder/app.py"
+ else
+-    exec /usr/bin/python3 "/Users/nicolasemidat/Library/CloudStorage/GoogleDrive-nicopaul19@gmail.com/My Drive/AI Projects & Agents/meeting-recorder/app.py"
++    /usr/bin/python3 "/Users/nicolasemidat/Library/CloudStorage/GoogleDrive-nicopaul19@gmail.com/My Drive/AI Projects & Agents/meeting-recorder/app.py"
+ fi
