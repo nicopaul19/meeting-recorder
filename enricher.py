@@ -2,21 +2,26 @@ from __future__ import annotations
 """
 Enricher — merges AI transcript with existing manual meeting notes.
 
-Uses GPT-4o to intelligently combine:
+Uses the configured LLM (config.LLM_MODEL) to combine:
 - User's hand-written notes (primary — always preserved)
 - AI-generated transcript (secondary — adds missing context)
 """
-from openai import OpenAI
-from config import OPENAI_API_KEY
+from llm import complete
 
-_client = None
-
-
-def _get_client() -> OpenAI:
-    global _client
-    if _client is None:
-        _client = OpenAI(api_key=OPENAI_API_KEY)
-    return _client
+PITCH_DECK_CONTEXT = """
+--- TUM SOCIAL AI PITCH DECK CONTEXT TO BE EXCLUDED ---
+AI FOR GOOD - THE STUDENT INITIATIVE WHERE AI MEETS SOCIAL IMPACT
+Top AI Adoption Barriers for NON PROFITS: 1. COST 2. LACK OF CLARITY 3. LACK OF KNOWLEDGE
+AI ACCELERATES BUSINESS BUT LEAVES SOCIAL IMPACT BEHIND!
+WE SEE A GAP IN THE ECOSYSTEM
+SOCIAL IMPACT, ENTREPRENEURSHIP, ARTIFICIAL INTELLIGENCE
+WE BRIDGE THIS GAP BY CONNECTING TOP STUDENT TALENT, EXPERT MENTORS, SOCIAL PARTNERS
+OUR CURRENT PROJECTS: IG - InitiativGruppe Interkulturelle Begegnung, DEMOCRATIZING FUNDING OPPORTUNITES, IMPROVING ACCESS TO CLEAN WATERSOURCES, RESEARCHING GENDER BIAS IN LLMS, ENABLING INCLUSION THROUGH CUSTOM WEB-LLMS.
+OUR OFFER FOR YOU: EXPLORE -> CO-CREATE -> FINALIZE -> SHARE & SUPPORT (FROM IDEAS TO REAL-WORLD SOLUTIONS AT NO COST).
+ABOUT SPONSORING: Provide ACCESS to TOOLS or COMPUTE RESOURCES, Offer MENTORING or host EVENTS, FUNDING.
+WHAT'S IN FOR THEM: RECOGNITION, ACCESS to TOP STUDENT TALENT, VISIBILITY.
+-------------------------------------------------------
+"""
 
 
 ENRICH_PROMPT = """You are a meeting notes editor. You have TWO sources:
@@ -36,6 +41,9 @@ WHAT YOU MUST NEVER DO:
 - Never DELETE any of the user's original content — every word they wrote must remain
 - Never REPLACE the user's sentences with your own rephrasing — keep their voice
 - Never REMOVE sections, headings, or bullet points the user created
+- Never INCLUDE the standard pitching or background information about "TUM Social AI" or "TUM Social AI Club". Ignore anything that sounds like the Pitch Deck context provided below.
+
+{pitch_deck_context}
 
 WHAT YOU ARE ENCOURAGED TO DO:
 - STRUCTURE the user's notes better: break long bullets into sub-bullets, split wall-of-text into clear bullet points
@@ -63,7 +71,8 @@ RULES:
    - Infer the person and company from the notes. If multiple external participants, mention the main one.
    - If you can't identify a specific person, adapt: "Hey guys, quick update from the [meeting name] meeting:"
 2. Keep it SHORT and punchy — max 5-7 bullet points with the most important takeaways only.
-3. Use WhatsApp formatting:
+3. EXCLUDE the standard pitch/background about "TUM Social AI". Ignore anything that sounds like the pitch context below.
+4. Use WhatsApp formatting:
    - *bold* (single asterisks, NOT double)
    - _italic_ (underscores)
    - NO markdown headers, NO ** bold **
@@ -73,6 +82,8 @@ RULES:
 7. End with next steps if applicable.
 8. Keep it under 800 characters — scannable in a chat.
 9. If the meeting was in German/Spanish, write the summary in English but keep company names and proper nouns in original language.
+
+{pitch_deck_context}
 
 Return ONLY the WhatsApp message text."""
 
@@ -86,8 +97,6 @@ def enrich_notes(
     Merge manual notes with AI transcript.
     Returns enriched markdown.
     """
-    client = _get_client()
-
     user_msg = f"""Meeting: {meeting_title}
 
 --- MANUAL NOTES (PRIMARY — preserve these) ---
@@ -96,27 +105,7 @@ def enrich_notes(
 --- AI TRANSCRIPT (supplementary — add only important missing info) ---
 {transcript_text}"""
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": ENRICH_PROMPT},
-            {"role": "user", "content": user_msg},
-        ],
-        temperature=0.3,
-        max_tokens=8000,
-    )
-
-    enriched = response.choices[0].message.content.strip()
-
-    # Remove code fences
-    if enriched.startswith("```markdown"):
-        enriched = enriched[len("```markdown"):].strip()
-    if enriched.startswith("```"):
-        enriched = enriched[3:].strip()
-    if enriched.endswith("```"):
-        enriched = enriched[:-3].strip()
-
-    return enriched
+    return complete(ENRICH_PROMPT.format(pitch_deck_context=PITCH_DECK_CONTEXT), user_msg)
 
 
 def create_notes_from_transcript(
@@ -127,8 +116,6 @@ def create_notes_from_transcript(
     Create structured meeting notes from a transcript only (no manual notes).
     Returns markdown.
     """
-    client = _get_client()
-
     prompt = """You are a professional meeting notes editor. Convert this meeting transcript into well-structured notes.
 
 RULES:
@@ -139,6 +126,9 @@ RULES:
 5. Group by topic, not chronologically
 6. NEVER lose a data point — every name, number, and date from the transcript must appear
 7. Filter out filler/greetings/chit-chat — keep only substantive content
+8. EXCLUDE any standard pitching and background information about "TUM Social AI" or "TUM Social AI Club". Ignore anything that sounds like the Pitch Deck context provided below.
+
+{pitch_deck_context}
 
 REQUIRED SECTIONS:
 - ## Key Discussion Points (with multiple ### sub-topic headings)
@@ -150,40 +140,12 @@ Return ONLY the markdown notes."""
 
     user_msg = f"Meeting: {meeting_title}\n\nTranscript:\n{transcript_text}"
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": user_msg},
-        ],
-        temperature=0.3,
-        max_tokens=8000,
-    )
-
-    notes = response.choices[0].message.content.strip()
-
-    if notes.startswith("```markdown"):
-        notes = notes[len("```markdown"):].strip()
-    if notes.startswith("```"):
-        notes = notes[3:].strip()
-    if notes.endswith("```"):
-        notes = notes[:-3].strip()
-
-    return notes
+    return complete(prompt.format(pitch_deck_context=PITCH_DECK_CONTEXT), user_msg)
 
 
 def generate_summary(notes_markdown: str, meeting_title: str = "") -> str:
     """Generate WhatsApp-style briefing from notes."""
-    client = _get_client()
-
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": SUMMARY_PROMPT},
-            {"role": "user", "content": f"Meeting: {meeting_title}\n\nNotes:\n{notes_markdown}"},
-        ],
-        temperature=0.3,
-        max_tokens=2000,
+    return complete(
+        SUMMARY_PROMPT.format(pitch_deck_context=PITCH_DECK_CONTEXT),
+        f"Meeting: {meeting_title}\n\nNotes:\n{notes_markdown}",
     )
-
-    return response.choices[0].message.content.strip()
