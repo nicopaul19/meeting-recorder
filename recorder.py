@@ -72,18 +72,27 @@ class MeetingRecorder:
         self._system_stream = None
         self._original_output: str = ""
         self._lock = threading.Lock()
+        # Peak levels since start. Exactly 0.0 after several seconds means
+        # macOS is blocking audio input (no microphone permission).
+        self.mic_peak = 0.0
+        self.system_peak = 0.0
+        self.output_switched = False
+        from audio_route import AudioRoute
+        self.route = AudioRoute()
 
     def _mic_callback(self, indata, frames, time_info, status):
         """Callback for microphone input stream."""
         if self.is_recording:
             with self._lock:
                 self._mic_data.append(indata.copy())
+            self.mic_peak = max(self.mic_peak, float(np.abs(indata).max()))
 
     def _system_callback(self, indata, frames, time_info, status):
         """Callback for BlackHole system audio stream."""
         if self.is_recording:
             with self._lock:
                 self._system_data.append(indata.copy())
+            self.system_peak = max(self.system_peak, float(np.abs(indata).max()))
 
     def check_setup(self) -> dict:
         """Check if audio setup is correct. Returns status dict."""
@@ -106,8 +115,8 @@ class MeetingRecorder:
             pass
 
         # Check Multi-Output Device
-        mo_idx = find_device(MULTI_OUTPUT_DEVICE_NAME, "output")
-        status["multi_output_found"] = mo_idx is not None
+        # The app builds its own multi-output route per recording (audio_route.py)
+        status["multi_output_found"] = status["blackhole_found"]
 
         # Check SwitchAudioSource
         try:
@@ -135,13 +144,12 @@ class MeetingRecorder:
                 "Run: brew install blackhole-2ch (and reboot)"
             )
 
-        # Save current output device and switch to Multi-Output
-        self._original_output = get_default_output_device()
-        if self._original_output != MULTI_OUTPUT_DEVICE_NAME:
-            switched = switch_audio_output(MULTI_OUTPUT_DEVICE_NAME)
-            if not switched:
-                print("⚠ Could not switch to Multi-Output Device. "
-                      "System audio may not be captured.")
+        self.mic_peak = self.system_peak = 0.0
+
+        # Mirror whatever you're listening on into BlackHole (temporary device)
+        self.output_switched = self.route.start()
+        if not self.output_switched:
+            print(f"⚠ Call audio won't be captured: {self.route.note}")
 
         # Reset buffers
         self._mic_data = []
@@ -200,9 +208,11 @@ class MeetingRecorder:
             self._system_stream.stop()
             self._system_stream.close()
 
-        # Restore original audio output
-        if self._original_output and self._original_output != MULTI_OUTPUT_DEVICE_NAME:
-            switch_audio_output(self._original_output)
+        # Restore your original output and remove the temporary device
+        try:
+            self.route.stop()
+        except Exception as e:
+            print(f"⚠ Audio route cleanup failed: {e}")
 
         # Mix audio
         with self._lock:

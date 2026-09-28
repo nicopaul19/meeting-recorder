@@ -1,108 +1,72 @@
 # 🎙️ Meeting Recorder
 
-A native macOS floating-window app that records meetings, transcribes them with OpenAI's GPT-4o-transcribe, and pushes structured notes directly to Notion — built with Python + AppKit.
+A Granola-style meeting recorder for macOS. About a minute before each calendar
+meeting with other people, a clean white panel pops up: record it, jot notes
+while you talk, then get one summary that merges **your** notes with the
+transcript. Your points are kept and highlighted. Copy it, save it as
+`.md`/`.txt`, or have it added straight to a Notion page or Google Doc.
 
-## What It Does
+## How it works
 
-- **One-click recording** from the macOS menu bar (or global hotkey `⌘⇧R`)
-- **Auto-detects meetings** from your Google Calendar
-- **Transcribes** audio using OpenAI's GPT-4o-transcribe model
-- **Enriches** transcripts with structured meeting notes
-- **Pushes to Notion** — creates meeting note pages in your database
-- **Floating window** — always-on-top compact UI
+1. **1 min before a meeting** (Google Calendar, at least one other person invited),
+   the panel asks where the summary should go: copy/save a file, or a Notion /
+   Google Doc link.
+2. **During the call:** a notepad with Markdown shortcuts (`#` heading, `-` bullet,
+   ⌘B/⌘I/⌘U, Tab to indent). It records your mic **and** the call audio. For call
+   audio the app builds a temporary output (your headphones/speakers + BlackHole)
+   and removes it when you stop.
+3. **At the scheduled end:** "Wrap up?" (+10 min, or auto-stop 5 min later).
+   There's a 90-min cap with a warning and a "+30 min" button.
+4. **After the call:** add your notes as bullets or as a Notion / Google Doc link.
+   The model (default `gpt-6-sol`, high reasoning) merges them with the
+   transcript (`gpt-4o-transcribe`), keeping your bullets verbatim and highlighted.
+5. **Result:** Copy (rich text), Save `.md` / `.txt`, or append to the Notion page
+   or Google Doc (tab-aware).
 
-## Features
+Reliability: the calendar is cached locally and prompts fire from the cache every
+5 s. The app re-syncs on wake, catches meetings that started while the Mac slept,
+dedupes prompts across restarts, and never opens a sign-in page on its own. A
+self-test checks the whole chain (mic permission, call audio, transcription,
+calendar, model, Notion, Docs).
 
-- 🎤 Records system audio via BlackHole virtual audio device
-- 🗓️ Google Calendar integration — auto-fills meeting titles
-- 📝 AI-powered transcription with speaker diarization
-- 📊 Live recording dashboard with waveform visualization
-- ⌨️ Global hotkey `⌘⇧R` for instant start/stop
-- 🔔 macOS native notifications
-
-## Prerequisites
-
-- **macOS** (uses AppKit for the native window)
-- **BlackHole 2ch** — virtual audio device for capturing system audio
-  - Install: `brew install blackhole-2ch`
-  - Set up a **Multi-Output Device** in Audio MIDI Setup (system audio + BlackHole)
-- **Python 3.8+**
-
-## Quick Start
-
-### 1. Clone & install
+## Setup
 
 ```bash
-git clone https://github.com/nicopaul19/meeting-recorder.git
-cd meeting-recorder
-python3 -m venv venv
-source venv/bin/activate
+brew install blackhole-2ch switchaudio-osx ffmpeg   # reboot after BlackHole
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
+cp .env.template .env                                # add your keys
 ```
 
-### 2. Configure
+Google: create an OAuth **Desktop** client in Google Cloud Console, enable the
+Calendar API (and the Docs API if you use Google Doc links), and save it as
+`credentials.json`. The first run asks you to sign in.
 
-```bash
-cp .env.template .env
-# Edit .env with your API keys
-```
+Run it directly with `python app.py`. To run it in the background at login as an
+app bundle (needed so macOS grants the microphone), use `bash scripts/deploy.sh`,
+which copies the code to `~/meeting-recorder-proxy`, builds and signs
+`Meeting Recorder.app`, and (re)starts the launchd job.
 
-You'll need:
-- **OpenAI API Key** — [Get one here](https://platform.openai.com/api-keys)
-- **Notion Integration Token** — [Create here](https://www.notion.so/my-integrations)
-- **Google Calendar OAuth** — Set up a project in [Google Cloud Console](https://console.cloud.google.com/), enable Calendar API, download `credentials.json`
+Self-test: menu bar → **Run Self-Test**, or
+`open -n -a ~/meeting-recorder-proxy/"Meeting Recorder.app" --args --run selftest`.
 
-### 3. Audio Setup
-
-1. Install BlackHole: `brew install blackhole-2ch`
-2. Open **Audio MIDI Setup** (Spotlight → "Audio MIDI Setup")
-3. Click `+` → **Create Multi-Output Device**
-4. Check both your speakers/headphones AND BlackHole 2ch
-5. Set the Multi-Output Device as your system output
-
-### 4. Run
-
-```bash
-python app.py
-```
-
-The app appears as a 🔴 icon in your macOS menu bar.
-
-## Project Structure
+## Project structure
 
 ```
-meeting-recorder/
-├── app.py                    # Main AppKit floating window app
-├── recorder.py               # Audio recording (BlackHole)
-├── transcriber.py            # OpenAI GPT-4o-transcribe
-├── enricher.py               # Transcript → structured notes
-├── notion_bridge.py          # Notion API integration
-├── meeting_watcher.py        # Google Calendar integration
-├── agent_bridge.py           # Bridge to meeting-notes-agent
-├── dashboard.py              # Recording dashboard UI
-├── local_store.py            # Local meeting data storage
-├── config.py                 # Configuration & env loading
-├── requirements.txt          # Python dependencies
-├── start_background.command  # macOS launcher script
-├── scripts/                  # Utility scripts
-└── .env.template             # Environment variable template
+app.py              menu bar app, floating 🎙 button, panel (WKWebView), session flow
+ui/panel.html       the panel UI (views, notes editor, paste handling)
+meeting_watcher.py  cached calendar sync + prompt scheduler
+google_auth.py      Calendar/Docs OAuth (separate tokens, no surprise browser pop-ups)
+recorder.py         mic + BlackHole capture
+audio_route.py      temporary multi-output device (headphones/speakers + BlackHole)
+transcriber.py      gpt-4o-transcribe (diarized)
+synthesizer.py      notes + transcript → structured summary; md/txt/html/Notion renderers
+destinations.py     read notes from / append summaries to Notion pages and Google Docs
+sessions.py         crash-safe per-meeting state
+llm.py              shared OpenAI Responses API client
+selftest.py         end-to-end checks
+scripts/            deploy.sh, build_runtime_app.sh, native launcher (launcher/launcher.c)
 ```
-
-## How It Works
-
-1. **Record** — Captures system audio via BlackHole virtual device
-2. **Transcribe** — Sends audio to OpenAI's GPT-4o-transcribe API
-3. **Enrich** — Structures transcript into meeting notes with key points
-4. **Push** — Creates a new page in your Notion meeting notes database
-
-## Requirements
-
-- macOS (AppKit-based)
-- Python 3.8+
-- BlackHole 2ch (virtual audio device)
-- OpenAI API account
-- Notion workspace
-- Google Calendar API (optional, for auto-detect)
 
 ## License
 

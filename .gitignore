@@ -36,3 +36,9 @@ ENV/
 
 # Logs
 *.log
+
+# Google Docs OAuth token
+token_docs.json
+
+# Personal content that isn't part of the app
+Tristan_Harris_Podcast_Extract/

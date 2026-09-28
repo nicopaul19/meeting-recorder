@@ -36,27 +36,42 @@ def _convert_to_mp3(wav_path: Path) -> Path:
     return mp3_path
 
 
+MAX_DURATION_SEC = 1300  # Stay safely under the 1400s API model limit
+
+
 def _chunk_audio(audio_path: Path, chunk_duration_ms: int = 600_000) -> list[Path]:
     """
-    Split audio into chunks if it exceeds the file size limit.
+    Split audio into chunks if it exceeds file size OR duration limits.
+    - File size limit: MAX_FILE_SIZE_MB (25 MB)
+    - Duration limit: MAX_DURATION_SEC (1300s, safely under API's 1400s cap)
     Returns list of chunk file paths.
     """
     file_size_mb = audio_path.stat().st_size / (1024 * 1024)
-
-    if file_size_mb <= MAX_FILE_SIZE_MB:
-        return [audio_path]
-
     audio = AudioSegment.from_file(str(audio_path))
     total_ms = len(audio)
-    chunks = []
+    total_sec = total_ms / 1000.0
 
-    for i, start_ms in enumerate(range(0, total_ms, chunk_duration_ms)):
-        end_ms = min(start_ms + chunk_duration_ms, total_ms)
+    needs_chunking = file_size_mb > MAX_FILE_SIZE_MB or total_sec > MAX_DURATION_SEC
+
+    if not needs_chunking:
+        return [audio_path]
+
+    # Use the smaller of file-size-based chunk duration and duration-limit chunk
+    max_chunk_ms = int(MAX_DURATION_SEC * 1000)  # duration-based cap
+    effective_chunk_ms = min(chunk_duration_ms, max_chunk_ms)
+
+    chunks = []
+    for i, start_ms in enumerate(range(0, total_ms, effective_chunk_ms)):
+        end_ms = min(start_ms + effective_chunk_ms, total_ms)
         chunk = audio[start_ms:end_ms]
 
         chunk_path = audio_path.parent / f"{audio_path.stem}_chunk{i:02d}.mp3"
         chunk.export(str(chunk_path), format="mp3", bitrate="128k")
         chunks.append(chunk_path)
+
+    print(f"📦 Split audio into {len(chunks)} chunks "
+          f"(total: {total_sec:.0f}s, {file_size_mb:.1f}MB, "
+          f"chunk max: {effective_chunk_ms/1000:.0f}s)")
 
     return chunks
 
@@ -122,41 +137,48 @@ def transcribe_audio(
                     "file": f,
                     "response_format": response_format,
                 }
+                if diarize:
+                    api_kwargs["chunking_strategy"] = {"type": "auto"}
                 if language:
                     api_kwargs["language"] = language
 
                 response = client.audio.transcriptions.create(**api_kwargs)
 
-                # Parse response based on format
-                if diarize and hasattr(response, "speakers"):
-                    # Diarized response has speakers[] with segments
-                    full_text_parts = []
-                    for speaker_data in response.speakers:
-                        speaker_label = speaker_data.get("speaker", "Speaker")
-                        for seg in speaker_data.get("segments", []):
-                            text_seg = seg.get("text", "").strip()
-                            full_text_parts.append(f"{speaker_label}: {text_seg}")
-                            all_segments.append({
-                                "speaker": speaker_label,
-                                "start": seg.get("start", 0) + time_offset,
-                                "end": seg.get("end", 0) + time_offset,
-                                "text": text_seg,
-                            })
-                    all_text.append(" ".join(full_text_parts))
-                else:
-                    # Standard response
-                    all_text.append(response.text)
+                # Parse response based on format. SDK objects expose attributes;
+                # older responses were dicts — support both.
+                def _f(obj, key, default=None):
+                    return obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
 
-                    if hasattr(response, "segments") and response.segments:
-                        for seg in response.segments:
-                            all_segments.append({
-                                "start": seg.get("start", seg.get("t0", 0)) + time_offset,
-                                "end": seg.get("end", seg.get("t1", 0)) + time_offset,
-                                "text": seg.get("text", ""),
-                            })
+                segments = _f(response, "segments") or []
+                if diarize and segments:
+                    lines = []
+                    for seg in segments:
+                        speaker = str(_f(seg, "speaker", "") or "Speaker")
+                        text_seg = (_f(seg, "text", "") or "").strip()
+                        if not text_seg:
+                            continue
+                        if lines and lines[-1][0] == speaker:
+                            lines[-1][1].append(text_seg)
+                        else:
+                            lines.append((speaker, [text_seg]))
+                        all_segments.append({
+                            "speaker": speaker,
+                            "start": (_f(seg, "start", 0) or 0) + time_offset,
+                            "end": (_f(seg, "end", 0) or 0) + time_offset,
+                            "text": text_seg,
+                        })
+                    all_text.append("\n".join(f"Speaker {sp}: {' '.join(t)}" for sp, t in lines))
+                else:
+                    all_text.append(_f(response, "text", "") or "")
+                    for seg in segments:
+                        all_segments.append({
+                            "start": (_f(seg, "start", 0) or 0) + time_offset,
+                            "end": (_f(seg, "end", 0) or 0) + time_offset,
+                            "text": _f(seg, "text", "") or "",
+                        })
 
                 # Update time offset for next chunk
-                if hasattr(response, "duration"):
+                if getattr(response, "duration", None):
                     time_offset += response.duration
                 else:
                     # Estimate from chunk duration
@@ -179,7 +201,7 @@ def transcribe_audio(
             chunk_path.unlink(missing_ok=True)
 
     # Build result
-    full_text = " ".join(all_text).strip()
+    full_text = "\n".join(t for t in all_text if t).strip()
 
     result = {
         "text": full_text,

@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Meeting Recorder</title>
+<style>
+  :root {
+    --bg: #FBFBF9;
+    --card: #FFFFFF;
+    --ink: #1D1D1F;
+    --ink-2: #6E6E73;
+    --ink-3: #A1A1A6;
+    --line: #ECECE8;
+    --line-2: #E2E2DD;
+    --accent: #2F7D4F;
+    --accent-soft: #E8F3EC;
+    --rec: #E5484D;
+    --rec-soft: #FDECEC;
+    --you: #FFF3B0;
+    --warn: #B7791F;
+    --radius: 12px;
+    --serif: ui-serif, "New York", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 13px/1.45 var(--sans); -webkit-font-smoothing: antialiased; user-select: none; }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  .drag { height: 2px; flex: none; -webkit-app-region: drag; }
+  main { flex: 1; overflow-y: auto; padding: 0 20px 16px; }
+  footer { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 20px;
+    border-top: 1px solid var(--line); color: var(--ink-3); font-size: 11px; }
+  footer .grow { flex: 1; }
+  h1 { font: 600 22px/1.2 var(--serif); margin: 4px 0 4px; letter-spacing: -0.01em; }
+  h2 { font: 600 11px/1 var(--sans); text-transform: uppercase; letter-spacing: .06em;
+    color: var(--ink-3); margin: 22px 0 10px; }
+  .muted { color: var(--ink-2); }
+  .faint { color: var(--ink-3); }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .grow { flex: 1; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 14px; }
+  .stack > * + * { margin-top: 10px; }
+
+  button { font: 500 13px var(--sans); border: 1px solid var(--line-2); background: var(--card);
+    color: var(--ink); border-radius: 9px; padding: 8px 14px; cursor: pointer; }
+  button:hover { background: #F4F4F1; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  button.primary:hover { background: #333336; }
+  button.rec { background: var(--rec); border-color: var(--rec); color: #fff; }
+  button.rec:hover { background: #D93D42; }
+  button.ghost { border-color: transparent; background: transparent; color: var(--ink-2); }
+  button.ghost:hover { background: #F0F0EC; color: var(--ink); }
+  button.link { border: 0; background: none; padding: 0; color: var(--accent); font-size: 12px; }
+  button.block { width: 100%; padding: 11px; font-size: 14px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-2);
+    background: #F1F1EE; border-radius: 999px; padding: 3px 9px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .dot.ok { background: var(--accent); }
+  .dot.warn { background: var(--warn); }
+  .dot.bad { background: var(--rec); }
+  .dot.live { background: var(--rec); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+
+  /* meetings list */
+  .mtg { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .mtg:last-child { border-bottom: 0; }
+  .mtg .time { width: 44px; flex: none; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  .mtg .t { font-weight: 500; }
+  .mtg .who { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .empty { color: var(--ink-3); padding: 14px 0; }
+
+  /* avatars */
+  .avatars { display: flex; }
+  .av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 10px; font-weight: 600; color: #fff; border: 2px solid var(--card); margin-left: -4px; letter-spacing: -.02em; }
+  .av:first-child { margin-left: 0; }
+
+  /* segmented */
+  .seg { display: flex; background: #F0F0EC; border-radius: 9px; padding: 3px; gap: 2px; }
+  .seg button { flex: 1; border: 0; background: transparent; padding: 6px 8px; font-size: 12px; color: var(--ink-2); }
+  .seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+  input[type=text], textarea { width: 100%; font: 13px/1.5 var(--sans); color: var(--ink);
+    background: var(--card); border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 11px;
+    outline: none; user-select: text; }
+  input[type=text]:focus, textarea:focus { border-color: #BDBDB7; box-shadow: 0 0 0 3px rgba(0,0,0,.04); }
+  textarea { resize: none; }
+  .notepad { min-height: 220px; height: 100%; border: 0; background: transparent; padding: 0;
+    font-size: 14px; line-height: 1.6; }
+  .notepad:focus { box-shadow: none; }
+  .hint { font-size: 11px; color: var(--ink-3); }
+  .err { color: var(--rec); font-size: 12px; }
+
+  /* banner */
+  .banner { border-radius: 10px; padding: 10px 12px; font-size: 12px; display: flex; gap: 10px; align-items: center; }
+  .banner.rec { background: var(--rec-soft); color: #9B2C2F; }
+  .banner.ok { background: var(--accent-soft); color: #1E5535; }
+  .banner.warn { background: #FFF6E5; color: #8A5A12; }
+  .banner .grow { flex: 1; }
+
+  .timer { font: 500 13px var(--sans); font-variant-numeric: tabular-nums; color: var(--rec); }
+
+  /* progress */
+  .steps { list-style: none; padding: 0; margin: 16px 0; }
+  .steps li { display: flex; gap: 10px; align-items: center; padding: 6px 0; color: var(--ink-3); }
+  .steps li.done { color: var(--ink-2); }
+  .steps li.now { color: var(--ink); font-weight: 500; }
+  .spin { width: 12px; height: 12px; border: 2px solid var(--line-2); border-top-color: var(--ink);
+    border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
+  .check { width: 12px; text-align: center; color: var(--accent); flex: none; }
+  .bullet { width: 12px; text-align: center; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* summary doc */
+  .doc { user-select: text; font-size: 13.5px; line-height: 1.55; }
+  .doc h1 { font: 600 20px/1.25 var(--serif); margin: 0 0 2px; }
+  .doc .meta { font-size: 12px; margin: 0 0 12px; }
+  .doc .tldr { background: #F4F4F0; border-radius: 10px; padding: 10px 12px; margin: 0 0 6px; }
+  .doc h2 { font: 600 15px/1.3 var(--serif); text-transform: none; letter-spacing: 0; color: var(--ink); margin: 18px 0 6px; }
+  .doc ul { margin: 0; padding-left: 18px; }
+  .doc li { margin: 3px 0; }
+  .doc li.ai::marker { color: var(--ink-3); }
+  .doc ul.todos { list-style: none; padding-left: 0; }
+  .doc .legend { margin-top: 18px; }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .toast { position: fixed; left: 50%; bottom: 56px; transform: translateX(-50%); background: var(--ink);
+    color: #fff; padding: 7px 14px; border-radius: 999px; font-size: 12px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .editor { outline: none; user-select: text; -webkit-user-select: text; font-size: 14px; line-height: 1.6;
+    min-height: 180px; overflow-y: auto; cursor: text; }
+  .editor.is-empty:before { content: attr(data-placeholder); color: var(--ink-3); white-space: pre-line; pointer-events: none; }
+  .editor h1 { font: 600 20px/1.3 var(--serif); margin: 8px 0 2px; }
+  .editor h2 { font: 600 17px/1.3 var(--serif); margin: 8px 0 2px; }
+  .editor h3 { font: 600 14.5px/1.3 var(--sans); margin: 6px 0 2px; }
+  .editor ul, .editor ol { margin: 2px 0; padding-left: 22px; }
+  .editor li { margin: 1px 0; }
+  .editor.boxed { background: var(--card); border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 11px; min-height: 200px; max-height: 300px; }
+  .fmt-hint { font-size: 10.5px; color: var(--ink-3); margin-top: 6px; }
+  .fmt-hint b { font-weight: 600; color: var(--ink-2); }
+  .title-input { font: 600 22px/1.2 var(--serif); border: 0; background: transparent; padding: 2px 0;
+    width: 100%; outline: none; color: var(--ink); border-bottom: 1px dashed transparent; user-select: text; }
+  .title-input:hover { border-bottom-color: var(--line-2); }
+  .title-input:focus { border-bottom-color: var(--ink-3); }
+  .big-input { font: 500 16px var(--sans) !important; padding: 11px 12px !important; }
+  .day { font-size: 11px; color: var(--ink-3); padding: 10px 0 2px; font-weight: 600; }
+  .icon-btn { border: 0; background: none; padding: 2px 6px; color: var(--ink-3); font-size: 13px; cursor: pointer; }
+  .icon-btn:hover { color: var(--ink); background: none; }
+  .kbd { font-size: 10px; border: 1px solid var(--line-2); border-radius: 4px; padding: 0 4px; color: var(--ink-3); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="drag"></div>
+  <main id="main"></main>
+  <footer id="footer"></footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const send = (action, data = {}) => {
+  try { window.webkit.messageHandlers.bridge.postMessage(Object.assign({action}, data)); }
+  catch (e) { console.log("bridge", action, data); }
+};
+
+let S = {};            // last state from Python
+let viewKey = "";      // re-render only when this changes
+let timerHandle = null;
+let local = { notesTab: null, destType: null };
+
+const COLORS = ["#8E7CC3","#6FA8DC","#76A5AF","#E69138","#C27BA0","#93C47D","#E06666","#F1C232"];
+function avatars(names) {
+  return `<div class="avatars">${(names || []).slice(0, 5).map((n, i) => {
+    const ini = n.split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
+    return `<div class="av" style="background:${COLORS[(n.length + i) % COLORS.length]}" title="${esc(n)}">${esc(ini)}</div>`;
+  }).join("")}${names && names.length > 5 ? `<span class="faint" style="margin-left:6px;font-size:11px">+${names.length - 5}</span>` : ""}</div>`;
+}
+function who(names) {
+  if (!names || !names.length) return "";
+  return names.slice(0, 3).join(", ") + (names.length > 3 ? ` +${names.length - 3}` : "");
+}
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1800);
+}
+function fmt(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : String(m).padStart(2, "0")) + ":" + String(s).padStart(2, "0");
+}
+function startTimer() {
+  clearInterval(timerHandle);
+  const tick = () => document.querySelectorAll("[data-timer]").forEach(el => {
+    el.textContent = fmt(Date.now() / 1000 - Number(el.dataset.timer));
+  });
+  tick(); timerHandle = setInterval(tick, 1000);
+}
+
+/* ─── Footer ─────────────────────────────────────────── */
+function renderFooter() {
+  const c = S.calendar || {};
+  const dot = {ok: "ok", offline: "warn", reauth: "bad"}[c.status] || "";
+  $("#footer").innerHTML = `
+    <span class="dot ${dot}"></span>
+    <span>${esc(c.text || "")}</span>
+    ${c.status === "reauth" ? `<button class="link" onclick="send('connect_calendar')">Reconnect</button>` : ""}
+    <span class="grow"></span>
+    <button class="link" onclick="flushNotes();send('close_window')" title="Esc">Hide</button>
+    ${S.view !== "home" && !S.locked ? `<button class="link" onclick="send('home')">Home</button>` : ""}
+    <span class="kbd">⌘⇧R</span>`;
+}
+
+/* ─── Views ──────────────────────────────────────────── */
+const views = {};
+
+views.home = () => {
+  const up = S.upcoming || [];
+  const pend = S.pending || [];
+  return `
+    <h1>Meetings</h1>
+    <div class="muted">${esc(S.today || "")}</div>
+    ${S.mic_status === "blocked" ? `<div class="banner rec" style="margin-top:14px"><span class="grow"><b>Microphone blocked.</b> Recordings will be silent until you allow <b>Meeting Recorder</b> in Privacy › Microphone.</span>
+      <button onclick="send('fix_mic')">Open settings</button><button class="ghost" onclick="send('recheck_mic')">Re-check</button></div>` : ""}
+    ${pend.length ? `<h2>Needs your notes</h2><div class="card" style="padding:4px 14px">
+      ${pend.map(p => `<div class="mtg" style="cursor:pointer" onclick="send('open_session',{session_id:'${p.id}'})">
+        <div class="time">${esc(p.time)}</div>
+        <div class="grow" style="min-width:0"><div class="t">${esc(p.title)}</div>
+        <div class="who">${esc(p.status_text)}</div></div>
+        <button class="ghost" onclick="event.stopPropagation();send('discard_session',{session_id:'${p.id}'})" title="Dismiss">✕</button>
+      </div>`).join("")}</div>` : ""}
+    <div class="row" style="margin:22px 0 10px"><h2 style="margin:0">Coming up</h2><span class="grow"></span>
+      <span class="hint">Auto-syncs every minute</span>
+      <button class="icon-btn" title="Sync calendar now" onclick="send('sync_now')">↻</button></div>
+    <div class="card" style="padding:0 14px 4px">
+      ${up.length ? up.map((m, i) => `${i === 0 || up[i - 1].day !== m.day ? `<div class="day">${esc(m.day)}</div>` : ""}<div class="mtg">
+        <div class="time">${esc(m.time)}</div>
+        <div class="grow" style="min-width:0"><div class="t">${esc(m.title)}</div>
+          <div class="who">${esc(who(m.attendees))}</div></div>
+        ${m.now ? `<button onclick="send('start_for_meeting',{key:'${esc(m.key)}'})">Record</button>` : ""}
+      </div>`).join("") : `<div class="empty">No meetings with other people today or tomorrow.</div>`}
+    </div>
+    <div style="margin-top:18px">
+      <button class="primary block" onclick="send('start_manual')">● Start recording now</button>
+    </div>`;
+};
+
+views.prompt = () => {
+  const p = S.prompt, m = p.meeting;
+  const dt = local.destType ?? p.dest_type ?? "local";
+  return `
+    <div class="pill" style="margin-top:2px"><span class="dot live"></span>${esc(m.starts_label)}</div>
+    <h1 style="margin-top:10px">${esc(m.title)}</h1>
+    <div class="row muted" style="margin-bottom:4px">${esc(m.time_range)}</div>
+    <div class="row" style="margin:10px 0 4px">${avatars(m.attendees)}<span class="faint" style="font-size:12px">${esc(who(m.attendees))}</span></div>
+
+    <h2>Where should the summary go?</h2>
+    <div class="seg" id="destSeg">
+      <button class="${dt === "local" ? "on" : ""}" onclick="setDest('local')">Copy / save file</button>
+      <button class="${dt === "link" ? "on" : ""}" onclick="setDest('link')">Notion or Google Doc</button>
+    </div>
+    <div id="destUrlWrap" style="margin-top:10px; ${dt === "link" ? "" : "display:none"}">
+      <input type="text" id="destUrl" placeholder="Paste a Notion page or Google Doc link" value="${esc(p.dest_url || "")}">
+      <div class="hint" style="margin-top:6px">Your notes are read from this page and the summary is added at the bottom.</div>
+    </div>
+    <div class="hint" id="destLocalHint" style="margin-top:8px; ${dt === "local" ? "" : "display:none"}">
+      After the call you add your bullets, then copy the summary or save it as .md / .txt.</div>
+
+    <div class="stack" style="margin-top:20px">
+      <button class="rec block" onclick="startPrompted(false)">● Start recording</button>
+      ${m.meet_link ? `<button class="block" onclick="startPrompted(true)">Record &amp; join call</button>` : ""}
+      <button class="ghost block" onclick="send('skip_prompt')">Not this one</button>
+    </div>`;
+};
+function setDest(t) {
+  local.destType = t;
+  document.querySelectorAll("#destSeg button").forEach((b, i) => b.classList.toggle("on", (i === 0) === (t === "local")));
+  $("#destUrlWrap").style.display = t === "link" ? "" : "none";
+  $("#destLocalHint").style.display = t === "local" ? "" : "none";
+  if (t === "link") $("#destUrl").focus();
+}
+function startPrompted(join) {
+  const t = local.destType ?? S.prompt.dest_type ?? "local";
+  send("start_prompted", {dest_type: t, dest_url: t === "link" ? $("#destUrl").value.trim() : "", join});
+}
+
+views.new = () => {
+  const n = S.new || {};
+  return `
+    <h1 style="margin-top:4px">New recording</h1>
+    <div class="muted">What's this meeting called?</div>
+    <input type="text" id="newTitle" class="big-input" style="margin-top:14px" placeholder="e.g. Accenture AI4G sync" value="${esc(n.title || "")}">
+    <h2>Summary destination <span style="text-transform:none;letter-spacing:0;font-weight:400">(optional)</span></h2>
+    <input type="text" id="newUrl" placeholder="Paste a Notion page or Google Doc link" value="">
+    <div class="hint" style="margin-top:6px">Leave empty to copy / save the summary as a file afterwards.</div>
+    <div class="stack" style="margin-top:20px">
+      <button class="rec block" onclick="startNew()">● Start recording</button>
+      <button class="ghost block" onclick="send('cancel_new')">Cancel</button>
+    </div>`;
+};
+function startNew() {
+  const t = $("#newTitle").value.trim();
+  if (!t) { $("#newTitle").focus(); toast("Give the meeting a name"); return; }
+  send("start_new", {title: t, dest_url: $("#newUrl").value.trim()});
+}
+
+views.recording = () => {
+  const s = S.session;
+  return `
+    <div class="row">
+      <span class="pill" style="background:var(--rec-soft);color:#9B2C2F"><span class="dot live"></span>Recording
+        <span class="timer" data-timer="${s.started_epoch}">00:00</span></span>
+      <span class="grow"></span>
+      <button class="ghost" onclick="flushNotes();send('close_window')" title="Hide (Esc). Click the 🎙 button to bring it back">Hide</button>
+      <button class="rec" onclick="flushNotes();send('stop')">■ Stop</button>
+    </div>
+    <input class="title-input" id="recTitle" style="margin-top:12px" value="${esc(s.title)}" title="Click to rename"
+      onchange="send('rename',{title:this.value})" onkeydown="if(event.key==='Enter'){this.blur()}">
+    ${s.attendees && s.attendees.length ? `<div class="row" style="margin:6px 0 2px">${avatars(s.attendees)}<span class="faint" style="font-size:12px">${esc(who(s.attendees))}</span></div>` : ""}
+    <div id="recBanner"></div>
+    <div class="card" style="margin-top:14px;height:calc(100vh - 270px);min-height:200px;display:flex;flex-direction:column">
+      <div class="editor" id="notepad" contenteditable="true" style="flex:1"
+        data-placeholder="Write your notes here.&#10;&#10;Your notes take priority and are highlighted in the final summary.">${mdToHtml(s.notepad)}</div>
+    </div>
+    ${FMT_HINT}
+    <div class="hint" style="margin-top:8px">${s.dest_label ? `Summary goes to: ${esc(s.dest_label)}` : "You'll choose where the summary goes after the call."}</div>`;
+};
+function flushNotes() { const np = $("#notepad"); if (np) { clearTimeout(np._h); send("notepad", {text: editorMd(np)}); } }
+window.flushNotes = flushNotes;
+function recBanner() {
+  const el = $("#recBanner"); if (!el) return;
+  const s = S.session || {};
+  if (s.audio_blocked) {
+    el.innerHTML = `<div class="banner rec" style="margin-top:12px"><span class="grow"><b>Nothing is being recorded.</b> macOS is blocking the microphone. Turn on <b>Meeting Recorder</b> in Privacy › Microphone, then stop and restart the recording.</span>
+      <button onclick="send('fix_mic')">Open settings</button></div>`;
+  } else if (s.max_warning) {
+    el.innerHTML = `<div class="banner rec" style="margin-top:12px"><span class="grow"><b>Stops at ${esc(s.max_stop_label)}</b> (${s.max_minutes}-min limit). Need longer?</span>
+      <button onclick="send('extend_max')">+30 min</button><button class="rec" onclick="flushNotes();send('stop')">Stop now</button></div>`;
+  } else if (s.end_prompt) {
+    el.innerHTML = `<div class="banner rec" style="margin-top:12px"><span class="grow"><b>Scheduled end reached.</b> Wrap up?${s.auto_stop_label ? ` Auto-stops ${esc(s.auto_stop_label)}.` : ""}</span>
+      <button class="rec" onclick="flushNotes();send('stop')">Stop</button><button onclick="send('keep_going')">+10 min</button></div>`;
+  } else if (S.up_next) {
+    el.innerHTML = `<div class="banner warn" style="margin-top:12px"><span class="grow"><b>Up next:</b> ${esc(S.up_next.title)} at ${esc(S.up_next.time)}</span>
+      <button onclick="flushNotes();send('switch_to_next')">Stop &amp; record next</button><button class="ghost" onclick="send('dismiss_next')">✕</button></div>`;
+  } else el.innerHTML = "";
+}
+
+views.notes = () => {
+  const s = S.session;
+  const tab = local.notesTab ?? (s.dest_type === "link" ? "link" : "bullets");
+  const tr = s.transcription || {};
+  return `
+    <div class="pill">${tr.state === "done" ? `<span class="dot ok"></span>Transcript ready`
+      : tr.state === "error" ? `<span class="dot bad"></span>Transcript failed` : `<span class="spin"></span>${esc(tr.text || "Transcribing…")}`}</div>
+    <h1 style="margin-top:10px">How did it go?</h1>
+    <div class="muted">${esc(s.title)} · ${esc(s.duration_label || "")}</div>
+
+    <h2>Your notes</h2>
+    <div class="seg" id="notesSeg">
+      <button class="${tab === "bullets" ? "on" : ""}" onclick="setTab('bullets')">My bullets</button>
+      <button class="${tab === "link" ? "on" : ""}" onclick="setTab('link')">Notion / Google Doc link</button>
+    </div>
+    <div id="tabBullets" style="margin-top:10px;${tab === "bullets" ? "" : "display:none"}">
+      <div class="editor boxed" id="bullets" contenteditable="true"
+        data-placeholder="- decision on pilot scope&#10;- Anna sends deck by Fri&#10;- budget concern re: compute">${mdToHtml(s.notepad)}</div>
+      ${FMT_HINT}
+      <div class="hint" style="margin-top:6px">Your bullets win over the transcript and are highlighted in the result.</div>
+    </div>
+    <div id="tabLink" style="margin-top:10px;${tab === "link" ? "" : "display:none"}">
+      <input type="text" id="noteUrl" placeholder="https://www.notion.so/… or https://docs.google.com/document/d/…" value="${esc(s.dest_url || "")}">
+      <div class="hint" style="margin-top:6px">I'll read your notes from that page and add the combined summary to the bottom of it.
+        ${s.notepad && s.notepad.trim() ? " Your in-call notepad is included too." : ""}</div>
+    </div>
+    ${s.error ? `<div class="err" style="margin-top:10px">${esc(s.error)}</div>` : ""}
+    <div class="stack" style="margin-top:18px">
+      <button class="primary block" id="genBtn" onclick="generate()">Generate summary</button>
+      <button class="ghost block" onclick="generate(true)">Skip notes, use transcript only</button>
+    </div>`;
+};
+function setTab(t) {
+  local.notesTab = t;
+  document.querySelectorAll("#notesSeg button").forEach((b, i) => b.classList.toggle("on", (i === 0) === (t === "bullets")));
+  $("#tabBullets").style.display = t === "bullets" ? "" : "none";
+  $("#tabLink").style.display = t === "link" ? "" : "none";
+  (t === "link" ? $("#noteUrl") : $("#bullets")).focus();
+}
+function generate(skip) {
+  const s = S.session;
+  let tab = local.notesTab ?? (s.dest_type === "link" ? "link" : "bullets");
+  let notes = skip ? "" : ($("#bullets") ? editorMd($("#bullets")) : "");
+  let url = tab === "link" && !skip ? ($("#noteUrl")?.value || "").trim() : "";
+  // Pasted a lone link into the bullets box? Treat it as a link.
+  const lone = notes.trim();
+  if (tab === "bullets" && /^https?:\/\/\S+$/.test(lone) && /notion\.(so|site)|docs\.google\.com\/document/.test(lone)) {
+    tab = "link"; url = lone; notes = s.notepad || "";
+  }
+  if (tab === "link" && !skip && !url) { toast("Paste a Notion or Google Doc link"); return; }
+  send("generate", {session_id: s.id, mode: skip ? "none" : tab, notes, url});
+}
+
+views.working = () => {
+  const s = S.session;
+  const steps = s.steps || [];
+  return `
+    <h1 style="margin-top:4px">${esc(s.title)}</h1>
+    <div class="muted">Writing your summary with ${esc(S.model || "the model")}…</div>
+    <ul class="steps">${steps.map(st => `<li class="${st.state}">
+      ${st.state === "done" ? `<span class="check">✓</span>` : st.state === "now" ? `<span class="spin"></span>` : `<span class="bullet">·</span>`}
+      ${esc(st.label)}</li>`).join("")}</ul>
+    <div class="hint">You can close this window. It keeps working in the background and comes back when done.</div>`;
+};
+
+views.result = () => {
+  const s = S.session;
+  const outs = s.outputs || [];
+  return `
+    ${outs.map(o => `<div class="banner ok" style="margin-bottom:10px"><span class="grow">✓ Added to your ${esc(o.label)}</span>
+      <button onclick="send('open_url',{url:'${esc(o.url)}'})">Open</button></div>`).join("")}
+    ${s.error ? `<div class="banner warn" style="margin-bottom:10px"><span class="grow">${esc(s.error)}</span>
+      ${s.dest_url ? `<button onclick="send('retry_write',{session_id:'${s.id}'})">Retry</button>` : ""}</div>` : ""}
+    <div class="actions" style="margin-bottom:14px">
+      <button class="primary" onclick="send('copy',{session_id:'${s.id}'})">Copy</button>
+      <button onclick="send('save',{session_id:'${s.id}',fmt:'md'})">Save .md</button>
+      <button onclick="send('save',{session_id:'${s.id}',fmt:'txt'})">Save .txt</button>
+      <span class="grow"></span>
+      <button class="ghost" onclick="send('regenerate',{session_id:'${s.id}'})" title="Add more notes and regenerate">Edit notes</button>
+    </div>
+    ${(s.saved_paths || []).length ? `<div class="hint" style="margin:-6px 0 12px">Saved: ${s.saved_paths.map(p =>
+      `<button class="link" onclick="send('reveal',{path:'${esc(p)}'})">${esc(p.split("/").pop())}</button>`).join(" · ")}</div>` : ""}
+    <div class="card doc">${s.html}</div>`;
+};
+
+views.error = () => {
+  const s = S.session;
+  return `
+    <h1>Something went wrong</h1>
+    <div class="muted">${esc(s.title)}</div>
+    <div class="banner warn" style="margin:14px 0"><span class="grow">${esc(s.error)}</span></div>
+    <div class="actions">
+      <button class="primary" onclick="send('retry',{session_id:'${s.id}'})">Try again</button>
+      <button onclick="send('discard_session',{session_id:'${s.id}'})">Dismiss</button>
+    </div>`;
+};
+
+/* ─── Notes editor: markdown-style shortcuts, stored as markdown ── */
+const FMT_HINT = `<div class="fmt-hint"><b>#</b> heading · <b>##</b> subheading · <b>-</b> bullet · <b>1.</b> numbered · <b>⌘B</b> bold · <b>⌘I</b> italic · <b>⌘U</b> underline · <b>Tab</b> indent</div>`;
+document.execCommand("styleWithCSS", false, false);
+document.execCommand("defaultParagraphSeparator", false, "div");
+
+function mdInline(t) {
+  return esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/&lt;u&gt;(.+?)&lt;\/u&gt;/g, "<u>$1</u>")
+    .replace(/~~(.+?)~~/g, "<s>$1</s>").replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>");
+}
+function mdToHtml(md) {
+  let html = ""; const stack = [];
+  const close = d => { while (stack.length > d) html += `</${stack.pop()}>`; };
+  for (const raw of (md || "").split("\n")) {
+    const li = raw.match(/^(\s*)([-*•]|\d+\.)\s+(.*)$/);
+    if (li) {
+      const depth = Math.floor(li[1].replace(/\t/g, "  ").length / 2) + 1, type = /\d/.test(li[2]) ? "ol" : "ul";
+      close(depth);
+      while (stack.length < depth) { html += `<${type}>`; stack.push(type); }
+      html += `<li>${mdInline(li[3]) || "<br>"}</li>`; continue;
+    }
+    close(0);
+    const h = raw.match(/^(#{1,3})\s+(.*)$/);
+    html += h ? `<h${h[1].length}>${mdInline(h[2])}</h${h[1].length}>` : `<div>${raw.trim() ? mdInline(raw) : "<br>"}</div>`;
+  }
+  close(0);
+  return (md || "").trim() ? html : "";
+}
+function inlineMd(node) {
+  let out = "";
+  for (const n of node.childNodes) {
+    if (n.nodeType === 3) { out += n.textContent; continue; }
+    if (n.nodeType !== 1) continue;
+    const t = n.tagName.toLowerCase();
+    if (t === "ul" || t === "ol") continue;
+    if (t === "br") { out += " "; continue; }
+    const inner = inlineMd(n), wrap = (a, b = a) => inner.trim() ? a + inner + b : inner;
+    const w = n.style ? n.style.fontWeight : "";
+    if (t === "b" || t === "strong" || w === "bold" || +w >= 600) out += wrap("**");
+    else if (t === "i" || t === "em" || (n.style && n.style.fontStyle === "italic")) out += wrap("*");
+    else if (t === "u" || (n.style && /underline/.test(n.style.textDecoration))) out += wrap("<u>", "</u>");
+    else if (t === "s" || t === "strike") out += wrap("~~");
+    else out += inner;
+  }
+  return out;
+}
+function editorMd(root) {
+  const out = [];
+  function list(el, depth) {
+    let i = 1;
+    for (const c of el.children) {
+      const t = c.tagName;
+      if (t === "LI") {
+        out.push("  ".repeat(depth) + (el.tagName === "OL" ? `${i++}. ` : "- ") + inlineMd(c).trim());
+        for (const sub of c.children) if (sub.tagName === "UL" || sub.tagName === "OL") list(sub, depth + 1);
+      } else if (t === "UL" || t === "OL") list(c, depth + 1);
+    }
+  }
+  function block(el) {
+    for (const c of el.childNodes) {
+      if (c.nodeType === 3) { if (c.textContent.trim()) out.push(c.textContent); continue; }
+      if (c.nodeType !== 1) continue;
+      const t = c.tagName;
+      if (/^H[1-3]$/.test(t)) out.push("#".repeat(+t[1]) + " " + inlineMd(c).trim());
+      else if (t === "UL" || t === "OL") list(c, 0);
+      else if ((t === "DIV" || t === "P") && c.querySelector("ul,ol,h1,h2,h3,div,p")) block(c);
+      else if (t === "BR") out.push("");
+      else out.push(inlineMd(c).replace(/\s+$/, ""));
+    }
+  }
+  block(root);
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+// Every line must live in its own block, or "## " / "- " can't format it.
+function ensureBlock(ed) {
+  const loose = [...ed.childNodes].filter(n => n.nodeType === 3 || (n.nodeType === 1 && /^(B|I|U|S|SPAN|BR)$/.test(n.tagName)));
+  if (!ed.childNodes.length || loose.length) {
+    const sel = getSelection(), r = sel.rangeCount ? sel.getRangeAt(0) : null;
+    const caretNode = r && r.startContainer, caretOff = r && r.startOffset;
+    if (!ed.childNodes.length) { ed.innerHTML = "<div><br></div>"; }
+    else {
+      const div = document.createElement("div");
+      ed.insertBefore(div, loose[0]);
+      loose.forEach(n => div.appendChild(n));
+    }
+    const target = caretNode && ed.contains(caretNode) && caretNode !== ed ? caretNode : ed.firstChild;
+    const nr = document.createRange();
+    try { nr.setStart(target, target === caretNode ? caretOff : 0); } catch (_) { nr.setStart(ed.firstChild, 0); }
+    nr.collapse(true); sel.removeAllRanges(); sel.addRange(nr);
+  }
+}
+function initEditor(ed, onChange) {
+  if (!ed || ed._init) return; ed._init = true;
+  ed.addEventListener("keydown", e => {
+    const mod = e.metaKey || e.ctrlKey, k = e.key.toLowerCase();
+    if (mod && !e.shiftKey && !e.altKey && (k === "b" || k === "i" || k === "u")) {
+      e.preventDefault(); document.execCommand({b: "bold", i: "italic", u: "underline"}[k]); return;
+    }
+    if (mod && e.shiftKey && k === "x") { e.preventDefault(); document.execCommand("strikeThrough"); return; }
+    ensureBlock(ed);
+    const sel = getSelection(); if (!sel.rangeCount) return;
+    let r = sel.getRangeAt(0), node = r.startContainer;
+    let block = (node.nodeType === 3 ? node.parentElement : node).closest("h1,h2,h3,li,div,p");
+    if (block === ed || !ed.contains(block)) block = null;
+    if (e.key === "Tab") {
+      e.preventDefault();
+      if (block && block.tagName === "LI") document.execCommand(e.shiftKey ? "outdent" : "indent");
+      return;
+    }
+    if (e.key === " " && r.collapsed && node.nodeType === 3 && !node.previousSibling) {
+      const before = node.textContent.slice(0, r.startOffset);
+      let cmd = null;
+      if (/^#{1,3}$/.test(before)) cmd = ["formatBlock", "h" + before.length];
+      else if (/^[-*•]$/.test(before) && !(block && block.tagName === "LI")) cmd = ["insertUnorderedList"];
+      else if (/^1\.$/.test(before) && !(block && block.tagName === "LI")) cmd = ["insertOrderedList"];
+      if (cmd) {
+        e.preventDefault();
+        const del = document.createRange(); del.setStart(node, 0); del.setEnd(node, r.startOffset); del.deleteContents();
+        if (block && !block.textContent.length) {
+          block.innerHTML = "<br>";
+          const at = document.createRange(); at.setStart(block, 0); at.collapse(true);
+          sel.removeAllRanges(); sel.addRange(at);
+        }
+        document.execCommand(cmd[0], false, cmd[1]);
+        onChange(); return;
+      }
+    }
+    // Backspace at the start of a heading turns it back into normal text
+    if (e.key === "Backspace" && r.collapsed && block && /^H[1-3]$/.test(block.tagName)) {
+      const pre = document.createRange(); pre.setStart(block, 0); pre.setEnd(r.startContainer, r.startOffset);
+      if (!pre.toString().length) { e.preventDefault(); document.execCommand("formatBlock", false, "div"); onChange(); }
+    }
+  });
+  const refresh = () => ed.classList.toggle("is-empty", !ed.textContent.trim() && !ed.querySelector("li,h1,h2,h3"));
+  ed.addEventListener("input", () => { ensureBlock(ed); refresh(); onChange(); });
+  ed.addEventListener("focus", () => ensureBlock(ed));
+  refresh();
+}
+
+/* ─── Paste: Notion / Google Docs → plain bullets ─────── */
+function htmlToBullets(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const out = [];
+  const inline = n => (n.textContent || "").replace(/\s+/g, " ").trim();
+  function walk(node, depth) {
+    for (const el of node.children) {
+      const tag = el.tagName.toLowerCase();
+      if (tag === "ul" || tag === "ol") { walk(el, depth + (el.closest("li") ? 1 : 0)); continue; }
+      if (tag === "li") {
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll("ul,ol").forEach(x => x.remove());
+        const box = el.querySelector(':scope > input[type=checkbox], :scope > div input[type=checkbox]');
+        const ordered = el.parentElement && el.parentElement.tagName.toLowerCase() === "ol";
+        const mark = box ? (box.checked ? "- [x] " : "- [ ] ") : ordered ? `${[...el.parentElement.children].indexOf(el) + 1}. ` : "- ";
+        const text = inline(clone);
+        if (text) out.push("  ".repeat(depth) + mark + text);
+        el.querySelectorAll(":scope > ul, :scope > ol").forEach(sub => walk(sub, depth + 1));
+        continue;
+      }
+      if (/^h[1-6]$/.test(tag)) { const t = inline(el); if (t) out.push("#".repeat(Math.min(3, +tag[1])) + " " + t); continue; }
+      if (tag === "table") { el.querySelectorAll("tr").forEach(tr => { const t = [...tr.children].map(inline).filter(Boolean).join(" | "); if (t) out.push("- " + t); }); continue; }
+      if (tag === "p" || tag === "blockquote" || tag === "pre") { const t = inline(el); if (t) out.push(t); continue; }
+      if (el.children.length) walk(el, depth);
+      else { const t = inline(el); if (t) out.push(t); }
+    }
+  }
+  walk(doc.body, 0);
+  return out.join("\n");
+}
+function extractUrl(text, html) {
+  const re = /https?:\/\/[^\s<>"')\]]+/;
+  if (html) { const a = new DOMParser().parseFromString(html, "text/html").querySelector("a[href^='http']"); if (a) return a.href; }
+  const m = (text || "").match(re); return m ? m[0] : (text || "").trim();
+}
+document.addEventListener("paste", e => {
+  const cd = e.clipboardData; if (!cd) return;
+  const html = cd.getData("text/html"), text = cd.getData("text/plain");
+  const ed = e.target && e.target.closest && e.target.closest(".editor");
+  if (ed) {
+    e.preventDefault();
+    const md = html ? (htmlToBullets(html) || text) : text;
+    if (/\n/.test(md) || /^\s*([-*•#]|\d+\.)\s/.test(md)) document.execCommand("insertHTML", false, mdToHtml(md));
+    else document.execCommand("insertText", false, md);
+    ed.dispatchEvent(new Event("input", {bubbles: true}));
+    return;
+  }
+  const el = e.target;
+  if (!el || !(el.tagName === "TEXTAREA" || el.tagName === "INPUT")) return;
+  let insert = null;
+  if (["noteUrl", "destUrl", "newUrl"].includes(el.id)) insert = extractUrl(text, html);
+  else if (el.tagName === "TEXTAREA" && html) {
+    const b = htmlToBullets(html);
+    if (b.trim()) insert = b;
+  }
+  if (insert == null) return;           // let the browser do a normal paste
+  e.preventDefault();
+  if (el.tagName === "INPUT") el.value = "";
+  document.execCommand("insertText", false, insert);
+  el.dispatchEvent(new Event("input", {bubbles: true}));
+});
+
+/* ─── Render ─────────────────────────────────────────── */
+function keyFor(st) {
+  const s = st.session || {};
+  // Include things that need a full re-render; everything else is patched.
+  return [st.view, s.id, st.view === "working" ? JSON.stringify(s.steps) : "",
+    st.view === "result" ? (s.outputs || []).length + "|" + (s.saved_paths || []).length + "|" + s.error + "|" + s.html.length : "",
+    st.view === "notes" ? (s.transcription || {}).state + "|" + (s.transcription || {}).text + "|" + s.error : "",
+    st.view === "home" ? JSON.stringify([st.upcoming, st.pending, st.mic_status]) : "",
+    st.view === "prompt" ? (st.prompt || {}).meeting.key + (st.prompt || {}).meeting.starts_label : ""].join("§");
+}
+
+window.setState = (st) => {
+  const prevView = S.view;
+  S = st;
+  const k = keyFor(st);
+  if (k !== viewKey) {
+    // Keep typed-but-unsent input when a notes view re-renders for progress
+    const keep = {noteUrl: $("#noteUrl")?.value, destUrl: $("#destUrl")?.value};
+    const keepBullets = $("#bullets")?.innerHTML;
+    if (st.view !== prevView) local = { notesTab: null, destType: null };
+    viewKey = k;
+    $("#main").innerHTML = (views[st.view] || views.home)();
+    if (st.view === prevView) {
+      for (const [id, v] of Object.entries(keep)) if (v != null && $("#" + id)) $("#" + id).value = v;
+      if (keepBullets != null && $("#bullets")) $("#bullets").innerHTML = keepBullets;
+    }
+    const np = $("#notepad");
+    if (np) {
+      initEditor(np, () => { clearTimeout(np._h); np._h = setTimeout(() => send("notepad", {text: editorMd(np)}), 250); });
+      if (st.view !== prevView) { np.focus(); const r = document.createRange(); r.selectNodeContents(np); r.collapse(false); getSelection().removeAllRanges(); getSelection().addRange(r); }
+    }
+    initEditor($("#bullets"), () => {});
+    if (st.view === "notes" && st.view !== prevView) $("#bullets")?.focus();
+    if (st.view === "new" && st.view !== prevView) { const t = $("#newTitle"); t.focus(); t.select(); }
+    startTimer();
+  }
+  if (st.view === "recording") recBanner();
+  renderFooter();
+};
+window.toast = toast;
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && S.view === "new" && e.target.id === "newTitle") { startNew(); return; }
+  if (e.key === "Escape") send("close_window");
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    if (S.view === "notes") generate();
+    if (S.view === "prompt") startPrompted(false);
+    if (S.view === "new") startNew();
+  }
+});
+
+send("ready");
+</script>
+</body>
+</html>
